@@ -93,7 +93,7 @@ jobs:
 
     - name: Upload kernel image
       if: success()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: kernel-image
         path: arch/arm64/boot/Image*
@@ -101,7 +101,7 @@ jobs:
 
     - name: Upload DTB files
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: dtb-files
         path: arch/arm64/boot/dts/*.dtb
@@ -110,7 +110,7 @@ jobs:
 
     - name: Upload modules
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: kernel-modules
         path: |
