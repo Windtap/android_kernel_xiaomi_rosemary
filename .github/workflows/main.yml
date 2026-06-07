@@ -1,0 +1,131 @@
+name: Kernel Build
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up build environment
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          bc \
+          bison \
+          ccache \
+          curl \
+          flex \
+          g++ \
+          gcc \
+          git \
+          gnupg \
+          gperf \
+          imagemagick \
+          lib32z1-dev \
+          liblz4-tool \
+          libncurses5 \
+          libncurses5-dev \
+          libsdl1.2-dev \
+          libssl-dev \
+          libxml2 \
+          libxml2-utils \
+          lzop \
+          openjdk-11-jdk \
+          pngcrush \
+          schedtool \
+          squashfs-tools \
+          xsltproc \
+          zip \
+          zlib1g-dev
+
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: kernel-build-${{ github.sha }}
+        max-size: 2G
+
+    - name: Build kernel
+      run: |
+        # Set build variables
+        export ARCH=arm64
+        export SUBARCH=arm64
+        export CROSS_COMPILE=aarch64-linux-gnu-
+        export CC=gcc
+        export CCACHE_EXEC=/usr/bin/ccache
+        export USE_CCACHE=1
+        
+        # Install cross-compiler
+        sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+        
+        # Load default config
+        if [ -f "arch/arm64/configs/rosemary_defconfig" ]; then
+          make rosemary_defconfig
+        elif [ -f "arch/arm64/configs/defconfig" ]; then
+          make defconfig
+        else
+          echo "Config file not found"
+          ls arch/arm64/configs/
+          exit 1
+        fi
+        
+        # Build kernel image
+        make -j$(nproc) Image
+        
+        # Build device tree blob
+        if [ -f "arch/arm64/boot/dts/Makefile" ]; then
+          make -j$(nproc) dtbs
+        fi
+        
+        # Build modules
+        make -j$(nproc) modules || true
+
+    - name: Upload kernel image
+      if: success()
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel-image
+        path: arch/arm64/boot/Image*
+        retention-days: 30
+
+    - name: Upload DTB files
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: dtb-files
+        path: arch/arm64/boot/dts/*.dtb
+        retention-days: 30
+      continue-on-error: true
+
+    - name: Upload modules
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: kernel-modules
+        path: |
+          **/*.ko
+          modules.order
+          modules.builtin
+        retention-days: 30
+      continue-on-error: true
+
+    - name: Create release on success
+      if: success() && startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          arch/arm64/boot/Image*
+          arch/arm64/boot/dts/*.dtb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
